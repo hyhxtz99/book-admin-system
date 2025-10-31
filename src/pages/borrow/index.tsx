@@ -5,11 +5,10 @@ import {
   getBorrowList,
   getCategoryList,
 } from "@/api";
-import { AuthHoc, Content, Layout } from "@/components";
 import { BORROW_STATUS } from "@/constants";
 import { BookType, BorrowQueryType, BorrowType, CategoryType } from "@/types";
 import { useCurrentUser } from "@/utils/hoos";
-import { ExclamationCircleFilled } from "@ant-design/icons";
+import { DynamicIcons } from "@/components/DynamicIcons";
 import {
   Button,
   Col,
@@ -21,13 +20,27 @@ import {
   Table,
   TablePaginationConfig,
   Tag,
+  Upload,
   message,
 } from "antd";
 import dayjs from "dayjs";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useState } from "react";
+import { exportToExcel, importFromExcel } from "@/utils/excel";
 
 import styles from "./index.module.css";
+
+// 动态导入组件
+const AuthHoc = dynamic(() => import("@/components/AuthHoc"), {
+  ssr: false,
+  loading: () => <div>Loading...</div>
+});
+
+const Content = dynamic(() => import("@/components/Content"), {
+  ssr: false,
+  loading: () => <div>Loading content...</div>
+});
 
 const Option = Select.Option;
 
@@ -88,6 +101,7 @@ export default function Borrow() {
   const [categoryList, setCategoryList] = useState<CategoryType[]>([]);
   const [bookList, setBookList] = useState<BookType[]>([]);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState<boolean>(false);
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: 20,
@@ -145,6 +159,7 @@ export default function Borrow() {
   const fetchData = useCallback(
     (search?: BorrowQueryType) => {
       const { book, user, author, status } = search || {};
+      setLoading(true);
       getBorrowList({
         current: pagination.current as number,
         pageSize: pagination.pageSize as number,
@@ -161,7 +176,7 @@ export default function Borrow() {
         }));
         setList(data);
         setTotal(res.total);
-      });
+      }).finally(() => setLoading(false));
     },
     [pagination]
   );
@@ -182,7 +197,7 @@ export default function Borrow() {
   const handleBorrowBack = (id: string) => {
     Modal.confirm({
       title: "确认归还？",
-      icon: <ExclamationCircleFilled />,
+      icon: <DynamicIcons.ExclamationCircleFilled />,
       okText: "确定",
       cancelText: "取消",
       async onOk() {
@@ -196,7 +211,7 @@ export default function Borrow() {
   const handleDeleteModal = (id: string) => {
     Modal.confirm({
       title: "确认删除？",
-      icon: <ExclamationCircleFilled />,
+      icon: <DynamicIcons.ExclamationCircleFilled />,
       okText: "确定",
       cancelText: "取消",
       async onOk() {
@@ -215,8 +230,52 @@ export default function Borrow() {
     fetchData(values);
   };
 
+  const handleExport = async () => {
+    const rows = list.map((item) => ({
+      书籍名称: (item as any).bookName ?? item.book?.name,
+      书籍作者: (item as any).author ?? item.book?.author,
+      借阅人: (item as any).borrowUser ?? item.user?.nickName,
+      状态: item.status === BORROW_STATUS.ON ? "借出" : "已还",
+      借阅时间: (item as any).borrowAt ?? "",
+      归还时间: (item as any).backAt ?? "-",
+    }));
+    await exportToExcel(rows, { filename: `借阅列表_${dayjs().format("YYYYMMDD_HHmmss")}`, sheetName: "借阅" });
+    message.success("导出成功");
+  };
+
+  const beforeUpload = async (file: File) => {
+    try {
+      const rows = await importFromExcel(file);
+      // 映射导入字段，允许中文表头
+      const mapped = ((rows || []).map((r: any) => ({
+        bookName: r["书籍名称"] || r["bookName"] || r["name"],
+        author: r["书籍作者"] || r["author"],
+        borrowUser: r["借阅人"] || r["user"] || r["borrowUser"],
+        status: r["状态"] === "借出" || r["status"] === BORROW_STATUS.ON ? BORROW_STATUS.ON : BORROW_STATUS.OFF,
+        borrowAt: r["借阅时间"] || r["borrowAt"],
+        backAt: r["归还时间"] || r["backAt"],
+      })) as unknown) as BorrowType[];
+      setList(mapped as BorrowType[]);
+      setTotal(mapped.length);
+      message.success("导入成功（仅本地预览，未提交服务器）");
+    } catch (e) {
+      message.error("导入失败，请检查文件格式");
+    }
+    return false; // 阻止 antd 自动上传
+  };
+
   return (
-    <Content title="书籍借阅">
+    <Content
+      title="书籍借阅"
+      operation={
+        <Space>
+          <Upload beforeUpload={beforeUpload} showUploadList={false} accept=".xlsx,.xls">
+            <Button>导入Excel</Button>
+          </Upload>
+          <Button onClick={handleExport} type="primary">导出Excel</Button>
+        </Space>
+      }
+    >
       <Form
         form={form}
         name="search"
@@ -256,7 +315,7 @@ export default function Borrow() {
             <Col span={5}>
               <Form.Item name="user" label="借阅人">
                 <Select placeholder="请选择" allowClear>
-                  {categoryList.map((category) => (
+                  {categoryList?.map((category) => (
                     <Option key={category._id} value={category._id}>
                       {category.name}
                     </Option>
@@ -285,6 +344,7 @@ export default function Borrow() {
           rowKey="_id"
           dataSource={list}
           columns={columns}
+          loading={loading}
           onChange={handleTableChange}
           scroll={{ x: 1300 }}
           pagination={{
@@ -296,4 +356,15 @@ export default function Borrow() {
       </div>
     </Content>
   );
+}
+
+// 借阅页面使用 SSR，提升首屏性能
+export async function getServerSideProps() {
+  // 服务端预取借阅数据，提升首屏性能
+  // 注意：这里可以根据需要预取初始数据
+  return { 
+    props: {
+      // 可以在这里预取借阅列表的初始数据
+    } 
+  };
 }

@@ -1,0 +1,22 @@
+.container {
+  padding: 20px;
+}
+
+.searchForm {
+  margin-bottom: 20px;
+  padding: 16px;
+  background-color: #fafafa;
+  border-radius: 6px;
+}
+
+.searchForm .ant-form-item {
+  margin-bottom: 0;
+}
+
+.searchForm .ant-form-item:not(:last-child) {
+  margin-right: 16px;
+}
+
+
+
+

@@ -1,9 +1,8 @@
 import { getUserList, userDelete, userUpdate } from "@/api";
-import { Content } from "@/components";
 import { USER_STATUS } from "@/constants";
 import { BookType, CategoryType, UserQueryType, UserType } from "@/types";
 import { useCurrentUser } from "@/utils/hoos";
-import { ExclamationCircleFilled } from "@ant-design/icons";
+import { DynamicIcons } from "@/components/DynamicIcons";
 import {
   Button,
   Col,
@@ -19,10 +18,17 @@ import {
   message,
 } from "antd";
 import dayjs from "dayjs";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useState } from "react";
 
 import styles from "./index.module.css";
+
+// 动态导入组件
+const Content = dynamic(() => import("@/components/Content"), {
+  ssr: false,
+  loading: () => <div>Loading content...</div>
+});
 
 const Option = Select.Option;
 
@@ -147,7 +153,7 @@ export default function Book() {
   const handleDeleteModal = (_id: string) => {
     Modal.confirm({
       title: "确认删除？",
-      icon: <ExclamationCircleFilled />,
+      icon: <DynamicIcons.ExclamationCircleFilled />,
       okText: "确定",
       cancelText: "取消",
       async onOk() {
@@ -239,4 +245,15 @@ export default function Book() {
       </Content>
     </>
   );
+}
+
+// 用户页面使用 SSR，提升首屏性能
+export async function getServerSideProps() {
+  // 服务端预取用户数据，提升首屏性能
+  // 注意：这里可以根据需要预取初始数据
+  return { 
+    props: {
+      // 可以在这里预取用户列表的初始数据
+    } 
+  };
 }

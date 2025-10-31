@@ -1,9 +1,8 @@
 import { bookDelete, getBookList, getCategoryList } from "@/api";
-import { AuthHoc, Content, Layout } from "@/components";
 import { USER_ROLE } from "@/constants";
-import { BookQueryType, BookType, CategoryType } from "@/types";
-import { useCurrentUser } from "@/utils/hoos";
-import { ExclamationCircleFilled } from "@ant-design/icons";
+import { BookQueryType, BookType, CategoryType, UserType } from "@/types";
+import { useCurrentUser, useDebounceCallback, useModal } from "@/utils/hoos";
+import { DynamicIcons } from "@/components/DynamicIcons";
 import {
   Button,
   Col,
@@ -19,13 +18,37 @@ import {
   TablePaginationConfig,
   Tag,
   Tooltip,
+  Upload,
   message,
 } from "antd";
 import dayjs from "dayjs";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { exportToExcel, importFromExcel } from "@/utils/excel";
 
 import styles from "./index.module.css";
+
+// 动态导入组件
+const AuthHoc = dynamic(() => import("@/components/AuthHoc"), {
+  ssr: false,
+  loading: () => <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
+});
+
+const Content = dynamic(() => import("@/components/Content"), {
+  ssr: false,
+  loading: () => <div style={{ 
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    minHeight: '200px' 
+  }}>Loading content...</div>
+});
+
+const StockRecordForm = dynamic(() => import("@/components/StockRecordForm"), {
+  ssr: false,
+  loading: () => <div>Loading...</div>
+});
 
 const Option = Select.Option;
 
@@ -35,23 +58,21 @@ const COLUMNS = [
     dataIndex: "name",
     key: "name",
     ellipsis: true,
-    width: 200,
+    width: 150,
   },
   {
     title: "封面",
     dataIndex: "cover",
     key: "cover",
     ellipsis: true,
-    width: 120,
+    width: 100,
     render: (text: string) => (
       <Image
         alt=""
         width={50}
         height={50}
         src={
-          text
-            ? text
-            : "data:image/png;base64,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"
+           `https://th.bing.com/th/id/OIP.BJLU5O5fk8kQix3yf-uZIAHaFl?w=1536&h=1157&rs=1&pid=ImgDetMain`
         }
       />
     ),
@@ -61,7 +82,7 @@ const COLUMNS = [
     dataIndex: "author",
     key: "author",
     ellipsis: true,
-    width: 150,
+    width: 80,
   },
   {
     title: "分类",
@@ -93,62 +114,77 @@ const COLUMNS = [
     title: "创建时间",
     dataIndex: "createdAt",
     key: "createdAt",
-    width: 130,
+    width: 100,
     render: (text: string) => dayjs(text).format("YYYY-MM-DD"),
   },
 ];
 
-export default function Book() {
+
+export default function Book(props: any) {
   const [form] = Form.useForm();
   const user = useCurrentUser();
   const [list, setList] = useState<BookType[]>([]);
   const [categoryList, setCategoryList] = useState<CategoryType[]>([]);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState<boolean>(false);
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: 20,
     showSizeChanger: true,
   });
+  const [stockRecordVisible, setStockRecordVisible] = useState(false);
+  const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const router = useRouter();
 
   const columns =
     user?.role === USER_ROLE.ADMIN
       ? [
-          ...COLUMNS,
-          {
-            title: "操作",
-            dataIndex: "",
-            key: "action",
-            render: (_: any, row: BookType) => (
-              <Space>
-                <Button
-                  type="link"
-                  block
-                  onClick={() => {
-                    router.push(`/book/edit/${row._id}`);
-                  }}
-                >
-                  编辑
-                </Button>
-                <Button
-                  type="link"
-                  danger
-                  block
-                  onClick={() => {
-                    handleDeleteModal(row._id as string);
-                  }}
-                >
-                  删除
-                </Button>
-              </Space>
-            ),
-          },
-        ]
+        ...COLUMNS,
+        {
+          title: "操作",
+          dataIndex: "",
+          key: "action",
+          render: (_: any, row: BookType) => (
+            <Space>
+              <Button
+                type="link"
+                block
+                onClick={() => {
+                  router.push(`/book/edit/${row._id}`);
+                }}
+              >
+                编辑
+              </Button>
+              <Button
+                type="link"
+                onClick={() => {
+                  setSelectedBook(row);
+                  setStockRecordVisible(true);
+                }}
+              >
+                入库
+              </Button>
+              <Button
+                type="link"
+                danger
+                block
+                onClick={() => {
+                  handleDeleteModal(row._id as string);
+                }}
+              >
+                删除
+              </Button>
+            </Space>
+          ),
+        },
+      ]
       : COLUMNS;
 
   const fetchData = useCallback(
     (search?: BookQueryType) => {
       const { name, category, author } = search || {};
+      setLoading(true);
       getBookList({
         current: pagination.current as number,
         pageSize: pagination.pageSize as number,
@@ -158,7 +194,7 @@ export default function Book() {
       }).then((res) => {
         setList(res.data);
         setTotal(res.total);
-      });
+      }).finally(() => setLoading(false));
     },
     [pagination]
   );
@@ -175,26 +211,43 @@ export default function Book() {
     })();
   }, []);
 
-  const handleBookAdd = () => {
+  // 使用防抖hook处理按钮点击
+  const handleBookAdd = useDebounceCallback(() => {
     router.push("/book/add");
+  }, 300);
+
+  // 使用模态框hook管理删除确认
+  const deleteModal = useModal();
+
+  const handleDeleteModal = useDebounceCallback((id: string) => {
+    deleteModal.show();
+    setDeleteId(id);
+  }, 300);
+
+  const handleDeleteConfirm = useDebounceCallback(async () => {
+    if (!deleteId) return;
+    
+    try {
+      await bookDelete(deleteId);
+      message.success("删除成功");
+      fetchData(form.getFieldsValue());
+      deleteModal.hide();
+      setDeleteId(null);
+    } catch (error) {
+      console.error(error);
+      deleteModal.hide();
+    }
+  }, 300);
+
+  const handleStockRecordSuccess = () => {
+    setStockRecordVisible(false);
+    setSelectedBook(null);
+    fetchData(form.getFieldsValue()); // 刷新列表
   };
 
-  const handleDeleteModal = (id: string) => {
-    Modal.confirm({
-      title: "确认删除？",
-      icon: <ExclamationCircleFilled />,
-      okText: "确定",
-      cancelText: "取消",
-      async onOk() {
-        try {
-          await bookDelete(id);
-          message.success("删除成功");
-          fetchData(form.getFieldsValue());
-        } catch (error) {
-          console.error(error);
-        }
-      },
-    });
+  const handleStockRecordCancel = () => {
+    setStockRecordVisible(false);
+    setSelectedBook(null);
   };
 
   const handleTableChange = (pagination: TablePaginationConfig) => {
@@ -205,15 +258,55 @@ export default function Book() {
     fetchData(values);
   };
 
+  const handleExport = async () => {
+    const rows = list.map((item) => ({
+      名称: item.name,
+      作者: item.author,
+      分类: typeof (item as any).category === 'string' ? (item as any).category : ((item as any).category?.name),
+      描述: item.description,
+      库存: item.stock,
+      创建时间: item.createdAt,
+    }));
+    await exportToExcel(rows, { filename: `图书列表_${dayjs().format("YYYYMMDD_HHmmss")}`, sheetName: "图书" });
+    message.success("导出成功");
+  };
+
+  const beforeUpload = async (file: File) => {
+    try {
+      const rows = await importFromExcel(file);
+      const mapped = (rows || []).map((r: any) => ({
+        name: r["名称"] || r["name"],
+        author: r["作者"] || r["author"],
+        category: r["分类"] ? { name: r["分类"] } : undefined,
+        description: r["描述"] || r["description"],
+        stock: Number(r["库存"] ?? r["stock"] ?? 0),
+        createdAt: r["创建时间"] || r["createdAt"],
+        _id: String(Math.random()).slice(2),
+      })) as any as BookType[];
+      setList(mapped);
+      setTotal(mapped.length);
+      message.success("导入成功（仅本地预览，未提交服务器）");
+    } catch (e) {
+      message.error("导入失败，请检查文件格式");
+    }
+    return false;
+  };
+
   return (
     <Content
       title="图书列表"
       operation={
-        <AuthHoc>
-          <Button type="primary" onClick={handleBookAdd}>
-            添加
-          </Button>
-        </AuthHoc>
+        <Space>
+          <Upload beforeUpload={beforeUpload} showUploadList={false} accept=".xlsx,.xls">
+            <Button>导入Excel</Button>
+          </Upload>
+          <Button onClick={handleExport}>导出Excel</Button>
+          <AuthHoc>
+            <Button type="primary" onClick={handleBookAdd}>
+              添加
+            </Button>
+          </AuthHoc>
+        </Space>
       }
     >
       <Form
@@ -236,7 +329,7 @@ export default function Book() {
           <Col span={5}>
             <Form.Item name="category" label="分类">
               <Select placeholder="请选择" allowClear>
-                {categoryList.map((category) => (
+                {categoryList?.map((category) => (
                   <Option key={category._id} value={category._id}>
                     {category.name}
                   </Option>
@@ -266,6 +359,7 @@ export default function Book() {
           rowKey="_id"
           dataSource={list}
           columns={columns}
+          loading={loading}
           onChange={handleTableChange}
           pagination={{
             ...pagination,
@@ -274,6 +368,35 @@ export default function Book() {
           }}
         />
       </div>
-    </Content>
-  );
+      
+        {stockRecordVisible && selectedBook && user && (
+          <StockRecordForm
+            book={selectedBook}
+            admin={user as UserType}
+            onSuccess={handleStockRecordSuccess}
+            onCancel={handleStockRecordCancel}
+          />
+        )}
+
+        {/* 删除确认模态框 */}
+        <Modal
+          title="确认删除"
+          open={deleteModal.visible}
+          onOk={handleDeleteConfirm}
+          onCancel={deleteModal.hide}
+          confirmLoading={deleteModal.loading}
+          okText="确定"
+          cancelText="取消"
+        >
+          <p>确定要删除这本图书吗？此操作不可撤销。</p>
+        </Modal>
+      </Content>
+    );
+  }
+
+// 在列表页启用 SSR，提升首屏渲染（仅作为示例，可根据需要调整）
+export async function getServerSideProps() {
+  // 这里只做最小示例：服务端不直接请求数据，保持现有客户端逻辑
+  // 如果你的 API 可在服务端访问，建议在这里预取初始数据并通过 props 传入
+  return { props: {} };
 }

@@ -1,6 +1,5 @@
 import { categoryAdd, categoryDelete, categoryUpdate } from "@/api/category";
-import { Content } from "@/components";
-import { ExclamationCircleFilled } from "@ant-design/icons";
+import { DynamicIcons } from "@/components/DynamicIcons";
 import {
   Button,
   Col,
@@ -16,12 +15,20 @@ import {
   message,
 } from "antd";
 import dayjs from "dayjs";
+import dynamic from "next/dynamic";
 import qs from "qs";
 import { useCallback, useEffect, useState } from "react";
+import { useDebounceCallback, useModal } from "@/utils/hoos";
 
 import { CategoryQueryType, CategoryType } from "../../types";
 import request from "../../utils/request";
 import styles from "./index.module.css";
+
+// 动态导入组件
+const Content = dynamic(() => import("@/components/Content"), {
+  ssr: false,
+  loading: () => <div>Loading content...</div>
+});
 
 const Option = Select.Option;
 
@@ -72,7 +79,7 @@ const COLUMNS = [
   },
 ];
 
-export default function Book() {
+export default function Book(props: any) {
   const [form] = Form.useForm();
   const [isModalOpen, setModalOpen] = useState(false);
   const [list, setList] = useState<CategoryType[]>([]);
@@ -85,6 +92,7 @@ export default function Book() {
     showSizeChanger: true,
   });
   const [editData, setEditData] = useState<Partial<CategoryType>>({});
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const columns = [
     ...COLUMNS,
@@ -159,7 +167,8 @@ export default function Book() {
     fetchData();
   }, [fetchData, fetchLevelOneData, pagination]);
 
-  const handleEditCategoryFinish = async (values: CategoryType) => {
+  // 使用防抖hook处理表单提交
+  const handleEditCategoryFinish = useDebounceCallback(async (values: CategoryType) => {
     // 编辑
     if (editData._id) {
       await categoryUpdate(editData._id, values);
@@ -170,30 +179,40 @@ export default function Book() {
     }
     fetchData();
     handleCancel();
-  };
+  }, 500);
 
-  const handleOk = async () => {
+  // 使用防抖hook处理确认按钮
+  const handleOk = useDebounceCallback(async () => {
     form.submit();
-  };
+  }, 300);
 
   const handleCancel = () => {
     setEditData({});
     setModalOpen(false);
   };
 
-  const handleDeleteModal = (id: string) => {
-    Modal.confirm({
-      title: "确认删除？",
-      icon: <ExclamationCircleFilled />,
-      okText: "确定",
-      cancelText: "取消",
-      async onOk() {
-        await categoryDelete(id);
-        message.success("删除成功");
-        fetchData(form.getFieldsValue());
-      },
-    });
-  };
+  // 使用模态框hook管理删除确认
+  const deleteModal = useModal();
+
+  const handleDeleteModal = useDebounceCallback((id: string) => {
+    deleteModal.show();
+    setDeleteId(id);
+  }, 300);
+
+  const handleDeleteConfirm = useDebounceCallback(async () => {
+    if (!deleteId) return;
+    
+    try {
+      await categoryDelete(deleteId);
+      message.success("删除成功");
+      fetchData(form.getFieldsValue());
+      deleteModal.hide();
+      setDeleteId(null);
+    } catch (error) {
+      console.error(error);
+      deleteModal.hide();
+    }
+  }, 500);
 
   const handleTableChange = (pagination: TablePaginationConfig) => {
     setPagination(pagination);
@@ -344,7 +363,28 @@ export default function Book() {
             </Form>
           </Modal>
         )}
+
+        {/* 删除确认模态框 */}
+        <Modal
+          title="确认删除"
+          open={deleteModal.visible}
+          onOk={handleDeleteConfirm}
+          onCancel={deleteModal.hide}
+          confirmLoading={deleteModal.loading}
+          okText="确定"
+          cancelText="取消"
+        >
+          <p>确定要删除这个分类吗？此操作不可撤销。</p>
+        </Modal>
       </Content>
     </>
   );
+}
+
+// 分类页使用 SSG，定期再验证
+export async function getStaticProps() {
+  return {
+    props: {},
+    revalidate: 60, // 60秒再验证
+  };
 }

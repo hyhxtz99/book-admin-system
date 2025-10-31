@@ -1,13 +1,7 @@
 import { setLogout } from "@/api";
 import { USER_ROLE } from "@/constants";
 import { useCurrentUser } from "@/utils/hoos";
-import { DownOutlined } from "@ant-design/icons";
-import {
-  ProfileOutlined,
-  SnippetsOutlined,
-  SolutionOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
+import { DynamicIcons } from "@/components/DynamicIcons";
 import {
   Layout as AntdLayout,
   Dropdown,
@@ -21,7 +15,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { PropsWithChildren, ReactElement, useMemo } from "react";
-
 import styles from "./index.module.css";
 
 const { Header, Sider, Content } = AntdLayout;
@@ -31,7 +24,7 @@ const ITEMS = [
     label: "图书管理",
     key: "book",
     role: USER_ROLE.USER,
-    icon: <SnippetsOutlined />,
+    icon: <DynamicIcons.SnippetsOutlined />,
     children: [
       {
         label: "图书列表",
@@ -43,13 +36,18 @@ const ITEMS = [
         key: "/book/add",
         role: USER_ROLE.ADMIN,
       },
+      {
+        label: "入库记录",
+        key: "/stock-record",
+        role: USER_ROLE.ADMIN,
+      },
     ],
   },
   {
     label: "借阅管理",
     key: "borrow",
     role: USER_ROLE.USER,
-    icon: <SolutionOutlined />,
+    icon: <DynamicIcons.SolutionOutlined />,
     children: [
       {
         label: "借阅列表",
@@ -66,13 +64,13 @@ const ITEMS = [
   {
     label: "分类管理",
     key: "/category",
-    icon: <ProfileOutlined />,
+    icon: <DynamicIcons.ProfileOutlined />,
     role: USER_ROLE.ADMIN,
   },
   {
     label: "用户管理",
     key: "user",
-    icon: <UserOutlined />,
+    icon: <DynamicIcons.UserOutlined />,
     role: USER_ROLE.ADMIN,
     children: [
       {
@@ -147,6 +145,7 @@ const Layout: React.FC<
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
+
       <main className={styles.main}>
         <AntdLayout className={styles.container}>
           <Header className={styles.header}>
@@ -163,7 +162,7 @@ const Layout: React.FC<
                 <span onClick={(e) => e.preventDefault()}>
                   <Space>
                     {user?.nickName}
-                    <DownOutlined />
+                    <DynamicIcons.DownOutlined />
                   </Space>
                 </span>
               </Dropdown>

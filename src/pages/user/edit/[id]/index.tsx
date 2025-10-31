@@ -1,7 +1,13 @@
 import { getUserDetail } from "@/api";
-import { UserForm } from "@/components";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
+
+// 动态导入表单组件
+const UserForm = dynamic(() => import("@/components/UserForm"), {
+  ssr: false,
+  loading: () => <div>Loading form...</div>
+});
 
 const UserAdd: React.FC<null> = () => {
   const router = useRouter();
